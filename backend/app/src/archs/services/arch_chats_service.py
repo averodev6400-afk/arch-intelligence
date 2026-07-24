@@ -1,10 +1,12 @@
 import json
 import math
+import yaml
 
 from fastapi import HTTPException
 
 from src.archs.repositories.arch_chats_repository import arch_chats_repository
 from src.archs.repositories import archs_repository
+from src.usage.repositories.usage_repository import usage_repository
 
 from configs.llm_integration import llm_integration
 from src.constants.prompts import ARCHITECTURE_ADVISOR
@@ -17,19 +19,39 @@ class ArchChatsService:
         if not arch:
             raise HTTPException(status_code=404, detail="Architecture not found.")
 
-        llm_response = llm_integration.query_llm([
+        # Fetch recent conversation history for context (last 10 exchanges)
+        history = await arch_chats_repository.get_context_chats(arch_id, limit=10)
+
+        # System prompt includes the architecture so it persists across all turns
+        arch_yaml = yaml.dump(arch.model_dump(), allow_unicode=True, sort_keys=False)
+        messages = [
             {
                 "role": "system",
-                "content": ARCHITECTURE_ADVISOR
-            },
-            {
-                "role": "user",
-                "content": f"Input Architecture JSON\n{arch.model_dump_json()}\n\nQuestion: {question}"
+                "content": f"{ARCHITECTURE_ADVISOR}\n\n**Current Architecture (YAML):**\n{arch_yaml}"
             }
-        ])
+        ]
 
-        # For now, return a placeholder response
+        # Replay previous turns so the LLM has full conversation context
+        for chat in history:
+            messages.append({"role": "user", "content": chat.question})
+            messages.append({"role": "assistant", "content": chat.answer})
+
+        # Append the new question
+        messages.append({"role": "user", "content": question})
+
+        llm_response = llm_integration.query_llm(messages)
+
         answer = llm_response.choices[0].message.content if llm_response and llm_response.choices else "Sorry, I couldn't generate a response."
+
+        if llm_response and llm_response.usage:
+            u = llm_response.usage
+            await usage_repository.create(
+                arch_id=arch_id,
+                model=llm_response.model,
+                prompt_tokens=u.prompt_tokens,
+                completion_tokens=u.completion_tokens,
+                total_tokens=u.total_tokens,
+            )
 
         chat = await arch_chats_repository.create_chat(arch_id, question, answer)
         return json.loads(chat.model_dump_json())

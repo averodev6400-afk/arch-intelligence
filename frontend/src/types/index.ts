@@ -93,3 +93,68 @@ export interface ChatMessage {
   content: string
   timestamp: string
 }
+
+// ─── Scenario types ───────────────────────────────────────────────────────────
+
+export interface EntryPointPayload {
+  node_id: string
+  traffic_unit: string
+}
+
+export interface NodeOverridePayload {
+  capacity?: number
+  metric?: string
+}
+
+export interface SimNodePayload {
+  canvas_node_id: string
+  label: string
+  icon: string
+  metric: string
+  capacity: number
+  utilization: number
+  reason?: string
+}
+
+export interface SimScenarioPayload {
+  name: 'Best' | 'Mid' | 'Worst'
+  entry_traffic: number
+  nodes: SimNodePayload[]
+}
+
+export interface SimResultPayload {
+  scenarios: [SimScenarioPayload, SimScenarioPayload, SimScenarioPayload]
+}
+
+export interface TrafficProfilePayload {
+  traffic_unit: string
+  best: number
+  mid: number
+  worst: number
+}
+
+export interface ScenarioResponse {
+  id: string
+  arch_id: string
+  name: string
+  description: string
+  entry_point: EntryPointPayload | null
+  traffic_profile: TrafficProfilePayload | null
+  sim_result: SimResultPayload | null
+  overrides: Record<string, NodeOverridePayload>
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateScenarioPayload {
+  name: string
+  description: string
+  entry_point: EntryPointPayload | null
+}
+
+export interface UpdateScenarioPayload {
+  name?: string
+  description?: string
+  entry_point?: EntryPointPayload | null
+  overrides?: Record<string, NodeOverridePayload>
+}

@@ -4,13 +4,14 @@ import os
 
 from configs.logger import logger
 from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from configs.settings import settings
 from contextlib import asynccontextmanager
 from configs.database import connect_db
 from configs.response import SuccessResponse, ErrorResponse
 
-from src import nodes_router, archs_router
+from src import nodes_router, archs_router, scenarios_router
 
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads", "icons")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -28,6 +29,15 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
     root_path="/v1",
+    redirect_slashes=False,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 @app.get(
@@ -47,6 +57,7 @@ async def health_check():
 
 app.include_router(nodes_router)
 app.include_router(archs_router)
+app.include_router(scenarios_router)
 
 # Serve uploaded files
 app.mount("/uploads", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "uploads")), name="uploads")

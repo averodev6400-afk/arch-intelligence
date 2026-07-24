@@ -24,5 +24,15 @@ class ArchChatsRepository:
         )
         return chats, total
 
+    async def get_context_chats(self, arch_id: str, limit: int = 10) -> list[ArchChat]:
+        """Fetch the most recent `limit` chats in chronological order for LLM context."""
+        chats = (
+            await ArchChat.find(ArchChat.arch_id == arch_id)
+            .sort(-ArchChat.created_at)
+            .limit(limit)
+            .to_list()
+        )
+        return list(reversed(chats))
+
 
 arch_chats_repository = ArchChatsRepository()

@@ -1,6 +1,6 @@
 import { memo, useState, useMemo } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
-import { Modal, Descriptions, Button, Input, Dropdown, Space } from 'antd'
+import { Modal, Descriptions, Button, Input, Dropdown, Space, Tooltip } from 'antd'
 import { InfoCircleOutlined, SettingOutlined, PlusOutlined, DeleteOutlined, SearchOutlined, EditOutlined, MoreOutlined } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 
@@ -11,6 +11,9 @@ export interface ArchNodeData {
   description: string
   provider: string
   configs?: Record<string, string>[]
+  simMode?: boolean
+  utilization?: number
+  simReason?: string
   [key: string]: unknown
 }
 
@@ -67,9 +70,35 @@ function ArchNode({ data, id, selected }: NodeProps) {
     setConfigOpen(false)
   }
 
+  const simBorder = nodeData.simMode && nodeData.utilization !== undefined
+    ? nodeData.utilization >= 100
+      ? 'border-red-400 ring-2 ring-red-100'
+      : nodeData.utilization >= 70
+        ? 'border-amber-400 ring-2 ring-amber-100'
+        : 'border-emerald-400 ring-2 ring-emerald-100'
+    : selected
+      ? 'border-indigo-500 ring-2 ring-indigo-200 shadow-indigo-100'
+      : 'border-slate-200'
+
   return (
     <>
-      <div className={`bg-white border rounded-lg shadow-sm px-3 py-2.5 min-w-[180px] max-w-[240px] hover:shadow-md transition-all ${selected ? 'border-indigo-500 ring-2 ring-indigo-200 shadow-indigo-100' : 'border-slate-200'}`}>
+      <div className={`relative bg-white border rounded-lg shadow-sm px-3 py-2.5 min-w-45 max-w-60 hover:shadow-md transition-all ${simBorder}`}>
+        {nodeData.simMode && nodeData.utilization !== undefined && (
+          <Tooltip
+            title={nodeData.simReason || undefined}
+            placement="top"
+            overlayStyle={{ maxWidth: 300 }}
+            overlayInnerStyle={{ fontSize: 11, lineHeight: '1.5' }}
+          >
+            <div className={`absolute -top-2.5 -right-2.5 min-w-10.5 text-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold text-white shadow-sm z-10 cursor-help ${
+              nodeData.utilization >= 100 ? 'bg-red-500' :
+              nodeData.utilization >= 70  ? 'bg-amber-500' :
+              'bg-emerald-500'
+            }`}>
+              {nodeData.utilization}%
+            </div>
+          </Tooltip>
+        )}
         {/* Each side has both source + target so connections work in any direction */}
         <Handle type="source" position={Position.Top} id="top-source" className="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2" />
         <Handle type="target" position={Position.Top} id="top-target" className="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2" />

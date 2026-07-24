@@ -7,6 +7,8 @@ from configs.settings import settings
 from src.nodes.models.node_model import Node
 from src.archs.models.arch_model import Arch
 from src.archs.models.arch_chat_model import ArchChat
+from src.usage.models.usage_model import LLMUsage
+from src.scenarios.models.scenario_model import Scenario
 
 async def connect_db():
     """
@@ -24,6 +26,8 @@ async def connect_db():
             Node,
             Arch,
             ArchChat,
+            LLMUsage,
+            Scenario,
         ])
         
         logger.info("Connected to MongoDB successfully.")
