@@ -6,7 +6,7 @@ class CreateNode(BaseModel):
     Node schema for creating a new node.
     """
     label: str
-    icon: str
+    icon: Optional[str] = None
     description: str
     provider: str
     node_type: str = "standard"  # "standard" | "group"
@@ -18,7 +18,7 @@ class Node(BaseModel):
     """
     id: str
     label: str
-    icon: str
+    icon: Optional[str] = None
     description: str
     provider: str
     node_type: str = "standard"

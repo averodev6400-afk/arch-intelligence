@@ -50,20 +50,15 @@ export default function NodeFormModal({ open, node, onClose }: Props) {
     try {
       const values = await form.validateFields()
 
-      if (!iconUrl) {
-        message.error('Please upload an icon image')
-        return
-      }
-
       if (isEdit) {
-        const payload: UpdateNodePayload = { ...values, icon: iconUrl }
+        const payload: UpdateNodePayload = { ...values, ...(iconUrl ? { icon: iconUrl } : {}) }
         await apiFetch<ApiResponse<Node>>(`/nodes/${node!.id}`, {
           method: 'PATCH',
           body: JSON.stringify(payload),
         })
         message.success('Node updated successfully')
       } else {
-        const payload: CreateNodePayload = { ...values, icon: iconUrl }
+        const payload: CreateNodePayload = { ...values, ...(iconUrl ? { icon: iconUrl } : {}) }
         await apiFetch<ApiResponse<Node>>('/nodes/', {
           method: 'POST',
           body: JSON.stringify(payload),
@@ -90,7 +85,7 @@ export default function NodeFormModal({ open, node, onClose }: Props) {
       destroyOnClose
     >
       <Form form={form} layout="vertical" className="mt-4">
-        <Form.Item label="Icon" required>
+        <Form.Item label="Icon"  extra="Optional — if not set, the node name will be shown instead">
           <div className="flex items-center gap-4">
             {iconUrl && (
               <img
