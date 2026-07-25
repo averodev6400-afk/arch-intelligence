@@ -5,7 +5,7 @@ from pydantic import Field
 
 class Node(Document):
     label: str
-    icon: str
+    icon: Optional[str] = None
     description: str
     provider: str
     node_type: str = "standard"  # "standard" | "group"

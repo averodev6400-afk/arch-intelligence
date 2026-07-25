@@ -22,7 +22,7 @@ export type NodeType = 'standard' | 'group'
 export interface Node {
   id: string
   label: string
-  icon: string
+  icon?: string
   description: string
   provider: string
   node_type: NodeType
@@ -33,7 +33,7 @@ export interface Node {
 
 export interface CreateNodePayload {
   label: string
-  icon: string
+  icon?: string
   description: string
   provider: string
   node_type: NodeType

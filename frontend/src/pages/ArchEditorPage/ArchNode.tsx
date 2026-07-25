@@ -19,15 +19,14 @@ export interface ArchNodeData {
 
 function ArchNode({ data, id, selected }: NodeProps) {
   const nodeData = data as ArchNodeData
+  const [hovered, setHovered] = useState(false)
+  const showHandles = hovered || !!selected
   const [editingLabel, setEditingLabel] = useState(false)
   const [customLabelValue, setCustomLabelValue] = useState('')
   const [infoOpen, setInfoOpen] = useState(false)
   const [configOpen, setConfigOpen] = useState(false)
   const [configs, setConfigs] = useState<{ key: string; value: string }[]>([])
   const [configSearch, setConfigSearch] = useState('')
-  const configSummary = nodeData.configs?.length
-    ? nodeData.configs.map((c) => Object.entries(c).map(([k, v]) => `${k}: ${v}`).join(', ')).join(' | ')
-    : 'No configs'
 
   function handleConfigOpen() {
     // Convert stored configs to editable format
@@ -82,7 +81,12 @@ function ArchNode({ data, id, selected }: NodeProps) {
 
   return (
     <>
-      <div className={`relative bg-white border rounded-lg shadow-sm px-3 py-2.5 min-w-45 max-w-60 hover:shadow-md transition-all ${simBorder}`}>
+      <div
+        className={`relative bg-white border rounded-xl shadow-sm w-27.5 flex flex-col items-center hover:shadow-md transition-all ${simBorder}`}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
+        {/* Simulation utilization badge — top left */}
         {nodeData.simMode && nodeData.utilization !== undefined && (
           <Tooltip
             title={nodeData.simReason || undefined}
@@ -90,7 +94,7 @@ function ArchNode({ data, id, selected }: NodeProps) {
             overlayStyle={{ maxWidth: 300 }}
             overlayInnerStyle={{ fontSize: 11, lineHeight: '1.5' }}
           >
-            <div className={`absolute -top-2.5 -right-2.5 min-w-10.5 text-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold text-white shadow-sm z-10 cursor-help ${
+            <div className={`absolute -top-2.5 -left-2.5 min-w-10.5 text-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold text-white shadow-sm z-10 cursor-help ${
               nodeData.utilization >= 100 ? 'bg-red-500' :
               nodeData.utilization >= 70  ? 'bg-amber-500' :
               'bg-emerald-500'
@@ -99,70 +103,70 @@ function ArchNode({ data, id, selected }: NodeProps) {
             </div>
           </Tooltip>
         )}
-        {/* Each side has both source + target so connections work in any direction */}
-        <Handle type="source" position={Position.Top} id="top-source" className="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2" />
-        <Handle type="target" position={Position.Top} id="top-target" className="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2" />
-        <Handle type="source" position={Position.Bottom} id="bottom-source" className="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2" />
-        <Handle type="target" position={Position.Bottom} id="bottom-target" className="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2" />
-        <Handle type="source" position={Position.Left} id="left-source" className="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2" />
-        <Handle type="target" position={Position.Left} id="left-target" className="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2" />
-        <Handle type="source" position={Position.Right} id="right-source" className="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2" />
-        <Handle type="target" position={Position.Right} id="right-target" className="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2" />
 
-        <div className="flex items-center gap-2.5">
-          {/* Icon */}
-          <img
-            src={nodeData.icon}
-            alt={nodeData.label}
-            className="w-8 h-8 rounded object-contain shrink-0"
-            onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://placehold.co/32x32?text=N' }}
-          />
-
-          {/* Label + provider + config summary */}
-          <div className="min-w-0 flex-1">
-            {nodeData.custom_label ? (
-              <>
-                <p className="text-sm font-medium text-indigo-700 truncate leading-tight">{nodeData.custom_label}</p>
-                <p className="text-[11px] text-slate-500 truncate leading-tight mt-0.5">{nodeData.label} · {nodeData.provider}</p>
-              </>
-            ) : (
-              <>
-                <p className="text-sm font-medium text-slate-800 truncate leading-tight">{nodeData.label}</p>
-                <p className="text-[11px] text-slate-500 truncate leading-tight mt-0.5">{nodeData.provider}</p>
-              </>
-            )}
-            <p className="text-[10px] text-slate-400 truncate leading-tight mt-0.5">{configSummary}</p>
-          </div>
-
-          {/* Three-dot menu */}
-          <Dropdown
-            menu={{
-              items: [
-                { key: 'rename', icon: <EditOutlined />, label: 'Rename' },
-                { key: 'details', icon: <InfoCircleOutlined />, label: 'Details' },
-                { key: 'configure', icon: <SettingOutlined />, label: 'Configure' },
-                { type: 'divider' },
-                { key: 'delete', icon: <DeleteOutlined />, label: 'Delete', danger: true },
-              ] as MenuProps['items'],
-              onClick: ({ key, domEvent }) => {
-                domEvent.stopPropagation()
-                if (key === 'rename') { setCustomLabelValue(nodeData.custom_label || ''); setEditingLabel(true) }
-                else if (key === 'details') setInfoOpen(true)
-                else if (key === 'configure') handleConfigOpen()
-                else if (key === 'delete') window.dispatchEvent(new CustomEvent('arch-node-delete', { detail: { id } }))
-              },
-            }}
-            trigger={['click']}
-            placement="bottomRight"
+        {/* Three-dot menu — absolute top right */}
+        <Dropdown
+          menu={{
+            items: [
+              { key: 'rename', icon: <EditOutlined />, label: 'Rename' },
+              { key: 'details', icon: <InfoCircleOutlined />, label: 'Details' },
+              { key: 'configure', icon: <SettingOutlined />, label: 'Configure' },
+              { type: 'divider' },
+              { key: 'delete', icon: <DeleteOutlined />, label: 'Delete', danger: true },
+            ] as MenuProps['items'],
+            onClick: ({ key, domEvent }) => {
+              domEvent.stopPropagation()
+              if (key === 'rename') { setCustomLabelValue(nodeData.custom_label || ''); setEditingLabel(true) }
+              else if (key === 'details') setInfoOpen(true)
+              else if (key === 'configure') handleConfigOpen()
+              else if (key === 'delete') window.dispatchEvent(new CustomEvent('arch-node-delete', { detail: { id } }))
+            },
+          }}
+          trigger={['click']}
+          placement="bottomRight"
+        >
+          <button
+            onClick={(e) => e.stopPropagation()}
+            className="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer z-10"
           >
-            <button
-              onClick={(e) => e.stopPropagation()}
-              className="w-6 h-6 flex items-center justify-center rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer shrink-0"
-            >
-              <MoreOutlined className="text-sm" />
-            </button>
-          </Dropdown>
-        </div>
+            <MoreOutlined className="text-xs" />
+          </button>
+        </Dropdown>
+
+        {/* Each side has both source + target so connections work in any direction */}
+        <Handle type="source" position={Position.Top} id="top-source" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="target" position={Position.Top} id="top-target" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="source" position={Position.Bottom} id="bottom-source" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="target" position={Position.Bottom} id="bottom-target" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="source" position={Position.Left} id="left-source" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="target" position={Position.Left} id="left-target" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="source" position={Position.Right} id="right-source" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="target" position={Position.Right} id="right-target" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+
+        {/* Image area */}
+        {nodeData.icon ? (
+          <>
+            <div className="w-full flex items-center justify-center pt-5 pb-3 px-4">
+              <img
+                src={nodeData.icon}
+                alt={nodeData.label}
+                className="w-12 h-12 object-contain"
+                onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://placehold.co/48x48?text=N' }}
+              />
+            </div>
+            <div className="w-full border-t border-slate-100 px-2 py-1.5">
+              <p className="text-[11px] font-medium text-slate-700 text-center leading-tight line-clamp-2">
+                {nodeData.custom_label || nodeData.label}
+              </p>
+            </div>
+          </>
+        ) : (
+          <div className="w-full flex items-center justify-center px-3 py-6">
+            <p className="text-[15px] font-semibold text-slate-800 text-center leading-snug line-clamp-3">
+              {nodeData.custom_label || nodeData.label}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Info Modal */}
@@ -174,12 +178,14 @@ function ArchNode({ data, id, selected }: NodeProps) {
         width={400}
       >
         <div className="flex items-center gap-3 mb-4">
-          <img
-            src={nodeData.icon}
-            alt={nodeData.label}
-            className="w-10 h-10 rounded object-contain"
-            onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://placehold.co/40x40?text=N' }}
-          />
+          {nodeData.icon && (
+            <img
+              src={nodeData.icon}
+              alt={nodeData.label}
+              className="w-10 h-10 rounded object-contain"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://placehold.co/40x40?text=N' }}
+            />
+          )}
           <div>
             <p className="font-medium text-slate-800">{nodeData.label}</p>
             <p className="text-xs text-slate-500">{nodeData.provider}</p>

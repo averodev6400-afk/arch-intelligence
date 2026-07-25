@@ -946,14 +946,19 @@ function ArchEditorInner() {
                       onDragStart={(e) => handleToolbarDragStart(e, node)}
                       onClick={() => handleAddNode(node)}
                       title={`${node.label}${node.provider ? ` · ${node.provider}` : ''}\nClick to add · Drag to place`}
-                      className="p-1.5 rounded-lg hover:bg-indigo-50 cursor-grab active:cursor-grabbing transition-colors select-none shrink-0"
+                      className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg hover:bg-indigo-50 cursor-grab active:cursor-grabbing transition-colors select-none shrink-0 w-14"
                     >
-                      <img
-                        src={node.icon}
-                        alt={node.label}
-                        className="w-5 h-5 object-contain"
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
-                      />
+                      {node.icon && (
+                        <img
+                          src={node.icon}
+                          alt={node.label}
+                          className="w-5 h-5 object-contain"
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                        />
+                      )}
+                      <span className="text-[10px] text-slate-600 text-center leading-tight w-full truncate">
+                        {node.label}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -1414,13 +1419,15 @@ function ArchEditorInner() {
 
                         return (
                           <div key={node.canvas_node_id} className="rounded-lg border border-slate-100 bg-slate-50/50 px-2 py-1.5">
-                            {/* Row: icon + label + util% + edit */}
+                            {/* Row: icon (optional) + label + util% + edit */}
                             <div className="flex items-center gap-1.5 mb-1">
-                              <img
-                                src={node.icon} alt={node.label}
-                                className="w-4 h-4 object-contain shrink-0"
-                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
-                              />
+                              {node.icon && (
+                                <img
+                                  src={node.icon} alt={node.label}
+                                  className="w-4 h-4 object-contain shrink-0"
+                                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                                />
+                              )}
                               <span className="text-xs text-slate-700 flex-1 truncate font-medium">{node.label}</span>
                               {hasOverride && (
                                 <span className="text-[9px] text-violet-600 bg-violet-50 border border-violet-200 px-1 rounded shrink-0">

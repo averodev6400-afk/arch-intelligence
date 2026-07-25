@@ -16,6 +16,8 @@ export interface GroupNodeData {
 
 function GroupNode({ data, id, selected }: NodeProps) {
   const nodeData = data as GroupNodeData
+  const [hovered, setHovered] = useState(false)
+  const showHandles = hovered || !!selected
   const [infoOpen, setInfoOpen] = useState(false)
   const [configOpen, setConfigOpen] = useState(false)
   const [configs, setConfigs] = useState<{ key: string; value: string }[]>([])
@@ -76,15 +78,21 @@ function GroupNode({ data, id, selected }: NodeProps) {
         handleClassName="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2 !rounded"
       />
 
-      <div className={`w-full h-full bg-indigo-50/30 border-2 border-dashed rounded-xl relative ${selected ? 'border-indigo-500 ring-2 ring-indigo-200 shadow-indigo-100' : 'border-indigo-300'}`}>
+      <div
+        className={`w-full h-full bg-indigo-50/30 border-2 border-dashed rounded-xl relative ${selected ? 'border-indigo-500 ring-2 ring-indigo-200 shadow-indigo-100' : 'border-indigo-300'}`}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
         {/* Header */}
         <div className="flex items-center gap-2 px-3 py-2 border-b border-indigo-200/60 bg-white/80 rounded-t-xl">
-          <img
-            src={nodeData.icon}
-            alt={nodeData.label}
-            className="w-6 h-6 rounded object-contain shrink-0"
-            onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://placehold.co/24x24?text=G' }}
-          />
+          {nodeData.icon && (
+            <img
+              src={nodeData.icon}
+              alt={nodeData.label}
+              className="w-6 h-6 rounded object-contain shrink-0"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://placehold.co/24x24?text=G' }}
+            />
+          )}
           <div className="min-w-0 flex-1">
             {nodeData.custom_label ? (
               <>
@@ -136,14 +144,14 @@ function GroupNode({ data, id, selected }: NodeProps) {
         <div className="p-2" />
 
         {/* Connection handles — each side has both source + target */}
-        <Handle type="source" position={Position.Top} id="top-source" className="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2" />
-        <Handle type="target" position={Position.Top} id="top-target" className="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2" />
-        <Handle type="source" position={Position.Bottom} id="bottom-source" className="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2" />
-        <Handle type="target" position={Position.Bottom} id="bottom-target" className="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2" />
-        <Handle type="source" position={Position.Left} id="left-source" className="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2" />
-        <Handle type="target" position={Position.Left} id="left-target" className="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2" />
-        <Handle type="source" position={Position.Right} id="right-source" className="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2" />
-        <Handle type="target" position={Position.Right} id="right-target" className="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2" />
+        <Handle type="source" position={Position.Top} id="top-source" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="target" position={Position.Top} id="top-target" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="source" position={Position.Bottom} id="bottom-source" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="target" position={Position.Bottom} id="bottom-target" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="source" position={Position.Left} id="left-source" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="target" position={Position.Left} id="left-target" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="source" position={Position.Right} id="right-source" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="target" position={Position.Right} id="right-target" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
       </div>
 
       {/* Info Modal */}
@@ -155,12 +163,14 @@ function GroupNode({ data, id, selected }: NodeProps) {
         width={400}
       >
         <div className="flex items-center gap-3 mb-4">
-          <img
-            src={nodeData.icon}
-            alt={nodeData.label}
-            className="w-10 h-10 rounded object-contain"
-            onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://placehold.co/40x40?text=G' }}
-          />
+          {nodeData.icon && (
+            <img
+              src={nodeData.icon}
+              alt={nodeData.label}
+              className="w-10 h-10 rounded object-contain"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://placehold.co/40x40?text=G' }}
+            />
+          )}
           <div>
             <p className="font-medium text-slate-800">{nodeData.label}</p>
             <p className="text-xs text-slate-500">{nodeData.provider}</p>
