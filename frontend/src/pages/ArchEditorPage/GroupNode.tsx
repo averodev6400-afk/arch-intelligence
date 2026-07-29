@@ -129,7 +129,7 @@ function GroupNode({ data, id, selected }: NodeProps) {
               },
             }}
             trigger={['click']}
-            placement="rightTop"
+            placement="topRight"
           >
             <button
               onClick={(e) => e.stopPropagation()}
