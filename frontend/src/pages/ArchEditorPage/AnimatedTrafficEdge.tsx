@@ -3,7 +3,7 @@ import { BaseEdge, getSmoothStepPath, type EdgeProps } from '@xyflow/react'
 
 function AnimatedTrafficEdge({
   id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
-  label, selected, markerEnd, style, data,
+  label, selected, style, data,
 }: EdgeProps) {
   const edgeData = data as { animDur?: number } | undefined
   const animDur = edgeData?.animDur ?? 1.5
