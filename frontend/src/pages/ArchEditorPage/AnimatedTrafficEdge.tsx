@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { BaseEdge, getBezierPath, type EdgeProps } from '@xyflow/react'
+import { BaseEdge, getSmoothStepPath, type EdgeProps } from '@xyflow/react'
 
 function AnimatedTrafficEdge({
   id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
@@ -8,7 +8,7 @@ function AnimatedTrafficEdge({
   const edgeData = data as { animDur?: number } | undefined
   const animDur = edgeData?.animDur ?? 1.5
 
-  const [edgePath, labelX, labelY] = getBezierPath({
+  const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition,
   })
 
@@ -17,7 +17,6 @@ function AnimatedTrafficEdge({
       <BaseEdge
         id={id}
         path={edgePath}
-        markerEnd={markerEnd}
         style={{ ...style, stroke: selected ? '#6366f1' : '#cbd5e1', strokeWidth: 2 }}
       />
       <path

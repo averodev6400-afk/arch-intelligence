@@ -14,7 +14,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/v1': {
-        target: 'http://localhost:8000',
+        target: process.env.BACKEND_URL ?? 'http://localhost:8000',
         changeOrigin: true,
       },
     },

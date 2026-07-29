@@ -82,7 +82,7 @@ export default function NodeFormModal({ open, node, onClose }: Props) {
       onOk={handleSubmit}
       okText={isEdit ? 'Update' : 'Create'}
       confirmLoading={uploading}
-      destroyOnClose
+      destroyOnHidden
     >
       <Form form={form} layout="vertical" className="mt-4">
         <Form.Item label="Icon"  extra="Optional — if not set, the node name will be shown instead">

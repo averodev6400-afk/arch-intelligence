@@ -18,8 +18,10 @@ class ArchNodeSchema(BaseModel):
     node_type: Optional[str] = None
     configs: Optional[list[dict]] = None
     parent_id: Optional[str] = None  # references another node's id for grouping
-    width: Optional[float] = None  # group node width
-    height: Optional[float] = None  # group node height
+    width: Optional[float] = None
+    height: Optional[float] = None
+    color_theme: Optional[str] = None
+    font_size: Optional[int] = None
 
 class EdgeSchema(BaseModel):
     id: Optional[str] = None

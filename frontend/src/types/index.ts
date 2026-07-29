@@ -65,6 +65,8 @@ export interface ArchNodeSchema {
   parent_id?: string
   width?: number
   height?: number
+  color_theme?: string
+  font_size?: number
 }
 
 export interface EdgeSchema {

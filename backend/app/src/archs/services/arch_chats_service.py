@@ -23,7 +23,13 @@ class ArchChatsService:
         history = await arch_chats_repository.get_context_chats(arch_id, limit=10)
 
         # System prompt includes the architecture so it persists across all turns
-        arch_yaml = yaml.dump(arch.model_dump(), allow_unicode=True, sort_keys=False)
+        # Strip UI-only fields (color_theme, font_size) — irrelevant to reasoning
+        _UI_FIELDS = {'color_theme', 'font_size'}
+        arch_dict = arch.model_dump()
+        for node in arch_dict.get('nodes', []):
+            for field in _UI_FIELDS:
+                node.pop(field, None)
+        arch_yaml = yaml.dump(arch_dict, allow_unicode=True, sort_keys=False)
         messages = [
             {
                 "role": "system",
