@@ -21,8 +21,10 @@ class ArchNodeData(BaseModel):
     node_type: Optional[str] = None  # ReactFlow node type e.g. 'archNode', 'groupNode'
     configs: Optional[list[dict]] = None
     parent_id: Optional[str] = None  # references another ArchNodeData.id for grouping
-    width: Optional[float] = None  # group node width
-    height: Optional[float] = None  # group node height
+    width: Optional[float] = None
+    height: Optional[float] = None
+    color_theme: Optional[str] = None
+    font_size: Optional[int] = None
 
 
 class Edge(BaseModel):

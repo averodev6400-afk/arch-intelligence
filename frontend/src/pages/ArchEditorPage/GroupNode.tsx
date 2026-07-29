@@ -1,7 +1,7 @@
 import { memo, useState, useMemo } from 'react'
 import { Handle, Position, type NodeProps, NodeResizer } from '@xyflow/react'
 import { Modal, Descriptions, Button, Input, Dropdown, Space } from 'antd'
-import { InfoCircleOutlined, SettingOutlined, PlusOutlined, DeleteOutlined, SearchOutlined, EditOutlined, MoreOutlined } from '@ant-design/icons'
+import { InfoCircleOutlined, SettingOutlined, PlusOutlined, DeleteOutlined, SearchOutlined, EditOutlined } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 
 export interface GroupNodeData {
@@ -75,11 +75,11 @@ function GroupNode({ data, id, selected }: NodeProps) {
         minWidth={300}
         minHeight={200}
         lineClassName="!border-indigo-300"
-        handleClassName="!w-2.5 !h-2.5 !bg-indigo-400 !border-white !border-2 !rounded"
+        handleClassName="!w-4 !h-4 !bg-black !border-white !border-2 !rounded"
       />
 
       <div
-        className={`w-full h-full bg-indigo-50/30 border-2 border-dashed rounded-xl relative ${selected ? 'border-indigo-500 ring-2 ring-indigo-200 shadow-indigo-100' : 'border-indigo-300'}`}
+        className={`w-full h-full bg-indigo-50/30 border-2 border-dashed rounded-md relative ${selected ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-black'}`}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
@@ -129,13 +129,13 @@ function GroupNode({ data, id, selected }: NodeProps) {
               },
             }}
             trigger={['click']}
-            placement="bottomRight"
+            placement="rightTop"
           >
             <button
               onClick={(e) => e.stopPropagation()}
-              className="w-6 h-6 flex items-center justify-center rounded hover:bg-indigo-100 text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer shrink-0"
+              className={`w-6 h-6 flex items-center justify-center rounded hover:bg-indigo-100 text-slate-400 hover:text-indigo-600 transition-all cursor-pointer shrink-0 ${hovered ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
             >
-              <MoreOutlined className="text-sm" />
+              <SettingOutlined className="text-sm" />
             </button>
           </Dropdown>
         </div>
@@ -144,14 +144,14 @@ function GroupNode({ data, id, selected }: NodeProps) {
         <div className="p-2" />
 
         {/* Connection handles — each side has both source + target */}
-        <Handle type="source" position={Position.Top} id="top-source" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
-        <Handle type="target" position={Position.Top} id="top-target" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
-        <Handle type="source" position={Position.Bottom} id="bottom-source" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
-        <Handle type="target" position={Position.Bottom} id="bottom-target" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
-        <Handle type="source" position={Position.Left} id="left-source" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
-        <Handle type="target" position={Position.Left} id="left-target" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
-        <Handle type="source" position={Position.Right} id="right-source" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
-        <Handle type="target" position={Position.Right} id="right-target" className={`w-2.5! h-2.5! bg-indigo-400! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="source" position={Position.Top} id="top-source" className={`w-4! h-4! bg-black! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="target" position={Position.Top} id="top-target" className={`w-4! h-4! bg-black! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="source" position={Position.Bottom} id="bottom-source" className={`w-4! h-4! bg-black! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="target" position={Position.Bottom} id="bottom-target" className={`w-4! h-4! bg-black! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="source" position={Position.Left} id="left-source" className={`w-4! h-4! bg-black! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="target" position={Position.Left} id="left-target" className={`w-4! h-4! bg-black! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="source" position={Position.Right} id="right-source" className={`w-4! h-4! bg-black! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
+        <Handle type="target" position={Position.Right} id="right-target" className={`w-4! h-4! bg-black! border-white! border-2! transition-opacity duration-150 ${showHandles ? 'opacity-100' : 'opacity-0 pointer-events-none!'}`} />
       </div>
 
       {/* Info Modal */}
@@ -259,7 +259,7 @@ function GroupNode({ data, id, selected }: NodeProps) {
         }}
         okText="Save"
         width={360}
-        destroyOnClose
+        destroyOnHidden
       >
         <p className="text-xs text-slate-500 mb-3">
           Give this group a meaningful name in the context of your architecture (e.g. "Production VPC", "Auth Subnet").

@@ -170,7 +170,7 @@ export default function ArchsListPage() {
         onOk={handleCreate}
         okText={editingArch ? 'Update' : 'Create'}
         confirmLoading={creating}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical" className="mt-4">
           <Form.Item name="name" label="Name" rules={[{ required: true, message: 'Please enter an architecture name' }]}>

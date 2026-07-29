@@ -1,16 +1,15 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Input, Button, Avatar, Spin, Modal, Form, Select, message } from 'antd'
+import { toPng } from 'html-to-image'
+import { Input, Button, Spin, Modal, Form, Select, Upload, message } from 'antd'
 import {
   SendOutlined,
   RobotOutlined,
-  UserOutlined,
   ArrowLeftOutlined,
   CloseOutlined,
   SaveOutlined,
   DownloadOutlined,
-  SearchOutlined,
   ThunderboltOutlined,
   PlusOutlined,
   EditOutlined,
@@ -21,12 +20,13 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   ReactFlow,
   Background,
-  MiniMap,
   addEdge,
   useNodesState,
   useEdgesState,
   useReactFlow,
   ReactFlowProvider,
+  ConnectionLineType,
+  reconnectEdge,
   getNodesBounds,
   getViewportForBounds,
   type OnConnect,
@@ -37,9 +37,9 @@ import {
   type EdgeChange,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { toPng } from 'html-to-image'
 import type {
-  ChatMessage, Node as BackendNode, ApiResponse, PaginatedResponse,
+  ChatMessage, ApiResponse, PaginatedResponse,
+  Node as BackendNode, CreateNodePayload,
   Arch, ArchNodeSchema, EdgeSchema,
   ScenarioResponse, CreateScenarioPayload, UpdateScenarioPayload,
 } from '@/types'
@@ -47,9 +47,50 @@ import { apiFetch } from '@/utils/api'
 import ArchNode from './ArchNode'
 import GroupNode from './GroupNode'
 import AnimatedTrafficEdge from './AnimatedTrafficEdge'
+import DeletableEdge from './DeletableEdge'
 
-const nodeTypes = { archNode: ArchNode, groupNode: GroupNode }
-const edgeTypes = { animatedEdge: AnimatedTrafficEdge }
+// ── Canvas page (draw.io-style bounded canvas) ───────────────────────────────
+const PAGE_NODE_ID = '__canvas_page__'
+const PAGE_DEFAULT_W = 1600
+const PAGE_DEFAULT_H = 1000
+const PAGE_PADDING = 200
+
+function createPageNode(width = PAGE_DEFAULT_W, height = PAGE_DEFAULT_H): Node {
+  return {
+    id: PAGE_NODE_ID,
+    type: 'canvasPage',
+    position: { x: 0, y: 0 },
+    data: { width, height },
+    selectable: false,
+    draggable: false,
+    connectable: false,
+    deletable: false,
+    focusable: false,
+    zIndex: -1,
+  }
+}
+
+function CanvasPageNode({ data }: { data: Record<string, unknown> }) {
+  const width = data.width as number
+  const height = data.height as number
+  return (
+    <div
+      style={{
+        width,
+        height,
+        background: '#ffffff',
+        borderRadius: 10,
+        boxShadow: '0 4px 32px rgba(0,0,0,0.07), 0 1px 4px rgba(0,0,0,0.04)',
+        border: '1px solid #e0dbd5',
+        pointerEvents: 'none',
+      }}
+    />
+  )
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+const nodeTypes = { archNode: ArchNode, groupNode: GroupNode, canvasPage: CanvasPageNode }
+const edgeTypes = { animatedEdge: AnimatedTrafficEdge, deletableEdge: DeletableEdge }
 
 type SimResult = import('@/types').SimResultPayload
 
@@ -76,8 +117,8 @@ const initialMessages: ChatMessage[] = [
 ]
 
 const MIN_CHAT_WIDTH = 260
-const MAX_CHAT_WIDTH = 560
-const DEFAULT_CHAT_WIDTH = 340
+const MAX_CHAT_WIDTH = 900
+const DEFAULT_CHAT_WIDTH = 480
 
 export default function ArchEditorPage() {
   return (
@@ -92,15 +133,13 @@ function ArchEditorInner() {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [chatOpen, setChatOpen] = useState(false)
+  const [chatOpen, setChatOpen] = useState(true)
   const [chatWidth, setChatWidth] = useState(DEFAULT_CHAT_WIDTH)
-  const [availableNodes, setAvailableNodes] = useState<BackendNode[]>([])
-  const [nodesLoading, setNodesLoading] = useState(false)
-  const [toolbarSearch, setToolbarSearch] = useState('')
-  const [pendingConnection, setPendingConnection] = useState<Connection | null>(null)
+const [pendingConnection, setPendingConnection] = useState<Connection | null>(null)
   const [edgeModalOpen, setEdgeModalOpen] = useState(false)
   const [edgeForm] = Form.useForm()
   const [saving, setSaving] = useState(false)
+  const [exportingPng, setExportingPng] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'dirty' | 'saving' | 'saved'>('idle')
   const [archName, setArchName] = useState('')
   const [mode, setMode] = useState<'design' | 'simulate'>('design')
@@ -124,21 +163,38 @@ function ArchEditorInner() {
   const [editingNodeOverride, setEditingNodeOverride] = useState<string | null>(null)
   const [overrideValues, setOverrideValues] = useState<{ capacity: string; metric: string }>({ capacity: '', metric: '' })
 
+  // Node picker (Add Node button)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerAnchor, setPickerAnchor] = useState<{ x: number; y: number } | null>(null)
+  const [ctxNodes, setCtxNodes] = useState<BackendNode[]>([])
+  const [ctxNodesLoaded, setCtxNodesLoaded] = useState(false)
+  const [ctxSearch, setCtxSearch] = useState('')
+
+  // Create-new-node modal (inside the picker flow)
+  const [createNodeOpen, setCreateNodeOpen] = useState(false)
+  const [createNodeForm] = Form.useForm()
+  const [createNodeIconUrl, setCreateNodeIconUrl] = useState('')
+  const [createNodeUploading, setCreateNodeUploading] = useState(false)
+
   const isResizing = useRef(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const isDirty = useRef(false)
   const latestSave = useRef<(silent?: boolean) => Promise<void>>(async () => {})
-  const headerRef = useRef<HTMLDivElement>(null)
-  const [headerHeight, setHeaderHeight] = useState(41)
+  const edgeReconnectSuccessful = useRef(true)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
+  const ctxSearchRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
   const reactFlowInstance = useReactFlow()
 
-  const [nodes, setNodes, _onNodesChange] = useNodesState([] as Node[])
+  const [nodes, setNodes, _onNodesChange] = useNodesState([createPageNode()] as Node[])
   const [edges, setEdges, _onEdgesChange] = useEdgesState([] as Edge[])
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
-    isDirty.current = true
-    setSaveStatus('dirty')
+    const affectsUserNodes = changes.some(c => !('id' in c) || (c as { id: string }).id !== PAGE_NODE_ID)
+    if (affectsUserNodes) {
+      isDirty.current = true
+      setSaveStatus('dirty')
+    }
     _onNodesChange(changes)
   }, [_onNodesChange])
 
@@ -147,6 +203,30 @@ function ArchEditorInner() {
     setSaveStatus('dirty')
     _onEdgesChange(changes)
   }, [_onEdgesChange])
+
+  // Auto-expand the canvas page to fit all user nodes
+  const [newPageW, newPageH] = useMemo(() => {
+    const realNodes = nodes.filter(n => n.id !== PAGE_NODE_ID)
+    if (!realNodes.length) return [PAGE_DEFAULT_W, PAGE_DEFAULT_H]
+    let maxX = 0, maxY = 0
+    for (const node of realNodes) {
+      const w = (node.measured?.width as number | undefined) ?? (node.style?.width as number | undefined) ?? 160
+      const h = (node.measured?.height as number | undefined) ?? (node.style?.height as number | undefined) ?? 80
+      maxX = Math.max(maxX, node.position.x + w)
+      maxY = Math.max(maxY, node.position.y + h)
+    }
+    return [Math.max(PAGE_DEFAULT_W, maxX + PAGE_PADDING), Math.max(PAGE_DEFAULT_H, maxY + PAGE_PADDING)]
+  }, [nodes])
+
+  useEffect(() => {
+    setNodes(nds => {
+      const pageNode = nds.find(n => n.id === PAGE_NODE_ID)
+      if (!pageNode) return nds
+      const d = pageNode.data as { width: number; height: number }
+      if (d.width === newPageW && d.height === newPageH) return nds
+      return nds.map(n => n.id === PAGE_NODE_ID ? { ...n, data: { width: newPageW, height: newPageH } } : n)
+    })
+  }, [newPageW, newPageH]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeItem = useMemo(
     () => scenarios.find((s) => s.id === activeScenarioId) ?? null,
@@ -180,7 +260,11 @@ function ArchEditorInner() {
             type: n.node_type || 'archNode',
             position: { x: n.position.x, y: n.position.y },
             ...(n.parent_id ? { parentId: n.parent_id, extent: 'parent' as const } : {}),
-            ...(n.node_type === 'groupNode' ? { style: { width: n.width || 400, height: n.height || 250 } } : {}),
+            ...(n.node_type === 'groupNode'
+              ? { style: { width: n.width || 400, height: n.height || 250 } }
+              : n.width || n.height
+                ? { style: { ...(n.width ? { width: n.width } : {}), ...(n.height ? { height: n.height } : {}) } }
+                : {}),
             data: {
               label: n.label,
               custom_label: n.custom_label || '',
@@ -188,6 +272,8 @@ function ArchEditorInner() {
               description: n.description || '',
               provider: n.provider || '',
               configs: n.configs || [],
+              color_theme: n.color_theme || undefined,
+              font_size: n.font_size || undefined,
             },
           }))
           const sorted: Node[] = []
@@ -208,7 +294,7 @@ function ArchEditorInner() {
               break
             }
           }
-          setNodes(sorted)
+          setNodes([createPageNode(), ...sorted])
         }
 
         if (arch.edges?.length) {
@@ -268,23 +354,7 @@ function ArchEditorInner() {
     loadScenarios()
   }, [archId])
 
-  // Load toolbar nodes on mount
-  useEffect(() => {
-    async function loadNodes() {
-      setNodesLoading(true)
-      try {
-        const res = await apiFetch<ApiResponse<PaginatedResponse<BackendNode>>>('/nodes/?page=1&limit=100')
-        setAvailableNodes(res.data.items)
-      } catch {
-        // silently fail — toolbar is non-critical
-      } finally {
-        setNodesLoading(false)
-      }
-    }
-    loadNodes()
-  }, [])
-
-  // Keep latestSave ref pointing to the current handleSave closure
+// Keep latestSave ref pointing to the current handleSave closure
   useEffect(() => {
     latestSave.current = handleSave
   })
@@ -306,16 +376,6 @@ function ArchEditorInner() {
     }, 10000)
     return () => clearInterval(timer)
   }, [archId])
-
-  // Measure header height so panels start below it
-  useLayoutEffect(() => {
-    if (!headerRef.current) return
-    const measure = () => setHeaderHeight(headerRef.current!.offsetHeight)
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(headerRef.current)
-    return () => ro.disconnect()
-  }, [])
 
   // --- Simulation ---
 
@@ -375,7 +435,7 @@ function ArchEditorInner() {
         delete data.simReason
         return { ...n, data }
       }))
-      setEdges((eds) => eds.map((e) => ({ ...e, type: undefined })))
+      setEdges((eds) => eds.map((e) => ({ ...e, type: 'deletableEdge' })))
       return
     }
 
@@ -532,13 +592,143 @@ function ArchEditorInner() {
     }
   }
 
+  // ── Node picker (Add Node button) ────────────────────────────────────────
+  const filteredCtxNodes = useMemo(() => {
+    const q = ctxSearch.trim().toLowerCase()
+    if (!q) return ctxNodes
+    return ctxNodes.filter(n =>
+      n.label.toLowerCase().includes(q) || n.provider.toLowerCase().includes(q)
+    )
+  }, [ctxNodes, ctxSearch])
+
+  async function handleCreateNodeIconUpload(file: File) {
+    setCreateNodeUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch('/v1/upload/icon', { method: 'POST', body: formData })
+      if (!res.ok) throw new Error('Upload failed')
+      const data: ApiResponse<{ url: string }> = await res.json()
+      setCreateNodeIconUrl(data.data.url)
+      message.success('Icon uploaded')
+    } catch {
+      message.error('Failed to upload icon')
+    } finally {
+      setCreateNodeUploading(false)
+    }
+    return false
+  }
+
+  async function handleCreateNodeSubmit() {
+    try {
+      const values = await createNodeForm.validateFields()
+      const payload: CreateNodePayload = { ...values, ...(createNodeIconUrl ? { icon: createNodeIconUrl } : {}) }
+      const res = await apiFetch<ApiResponse<BackendNode>>('/nodes/', { method: 'POST', body: JSON.stringify(payload) })
+      const created = res.data
+      // Add to picker list so it's immediately available
+      setCtxNodes(prev => [created, ...prev])
+      // Place on canvas at center
+      const canvasEl = document.querySelector('.react-flow__pane')
+      const rect = canvasEl?.getBoundingClientRect()
+      const flowPos = rect
+        ? reactFlowInstance.screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+        : { x: 200, y: 200 }
+      const newNode: Node = {
+        id: crypto.randomUUID(),
+        type: created.node_type === 'group' ? 'groupNode' : 'archNode',
+        position: flowPos,
+        ...(created.node_type === 'group' ? { style: { width: 400, height: 250 } } : {}),
+        data: {
+          label: created.label,
+          custom_label: '',
+          icon: created.icon || '',
+          description: created.description || '',
+          provider: created.provider || '',
+          configs: [],
+        },
+      }
+      setNodes(nds => [...nds, newNode])
+      isDirty.current = true
+      setSaveStatus('dirty')
+      message.success('Node created and added to canvas')
+      setCreateNodeOpen(false)
+      createNodeForm.resetFields()
+      setCreateNodeIconUrl('')
+    } catch (err: unknown) {
+      if (err instanceof Error) message.error(err.message)
+    }
+  }
+
+  function openNodePicker(e: React.MouseEvent<HTMLButtonElement>) {
+    const rect = e.currentTarget.getBoundingClientRect()
+    setPickerAnchor({ x: rect.right - 224, y: rect.bottom + 6 })
+    setPickerOpen(true)
+    setCtxSearch('')
+    if (!ctxNodesLoaded) {
+      apiFetch<ApiResponse<PaginatedResponse<BackendNode>>>('/nodes/?page=1&limit=100')
+        .then(res => { setCtxNodes(res.data.items); setCtxNodesLoaded(true) })
+        .catch(() => { setCtxNodesLoaded(true) })
+    }
+  }
+
+  function addNodeFromPicker(backendNode: BackendNode) {
+    const canvasEl = document.querySelector('.react-flow__pane')
+    const rect = canvasEl?.getBoundingClientRect()
+    const flowPos = rect
+      ? reactFlowInstance.screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+      : { x: 200, y: 200 }
+    const newNode: Node = {
+      id: crypto.randomUUID(),
+      type: backendNode.node_type === 'group' ? 'groupNode' : 'archNode',
+      position: flowPos,
+      ...(backendNode.node_type === 'group' ? { style: { width: 400, height: 250 } } : {}),
+      data: {
+        label: backendNode.label,
+        custom_label: '',
+        icon: backendNode.icon || '',
+        description: backendNode.description || '',
+        provider: backendNode.provider || '',
+        configs: [],
+      },
+    }
+    setNodes(nds => [...nds, newNode])
+    isDirty.current = true
+    setSaveStatus('dirty')
+    setPickerOpen(false)
+  }
+
+  // Close picker on outside click or Escape
+  useEffect(() => {
+    if (!pickerOpen) return
+    function onMouseDown(e: MouseEvent) {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as globalThis.Node)) {
+        setPickerOpen(false)
+      }
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setPickerOpen(false)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [pickerOpen])
+
+  // Focus search input when picker opens
+  useEffect(() => {
+    if (pickerOpen) setTimeout(() => ctxSearchRef.current?.focus(), 30)
+  }, [pickerOpen])
+  // ─────────────────────────────────────────────────────────────────────────────
+
   // Save architecture
   async function handleSave(silent = false) {
     if (!archId) return
     setSaving(true)
     if (!silent) setSaveStatus('saving')
     try {
-      const archNodes: ArchNodeSchema[] = nodes.map((n) => ({
+      const archNodes: ArchNodeSchema[] = nodes.filter((n) => n.id !== PAGE_NODE_ID).map((n) => ({
         id: n.id,
         label: (n.data as Record<string, string>).label || '',
         custom_label: (n.data as Record<string, string>).custom_label || undefined,
@@ -549,7 +739,10 @@ function ArchEditorInner() {
         node_type: n.type || 'archNode',
         configs: (n.data as Record<string, unknown>).configs as Record<string, string>[] | undefined,
         parent_id: n.parentId || undefined,
-        ...(n.type === 'groupNode' ? { width: n.measured?.width ?? 400, height: n.measured?.height ?? 250 } : {}),
+        width: (n.style?.width as number | undefined) ?? n.measured?.width,
+        height: (n.style?.height as number | undefined) ?? n.measured?.height,
+        color_theme: (n.data as Record<string, unknown>).color_theme as string | undefined,
+        font_size: (n.data as Record<string, unknown>).font_size as number | undefined,
       }))
       const archEdges: EdgeSchema[] = edges.map((e) => ({
         id: e.id,
@@ -576,10 +769,75 @@ function ArchEditorInner() {
     }
   }
 
+  async function handleExportPng() {
+    const userNodes = nodes.filter(n => n.id !== PAGE_NODE_ID)
+    if (!userNodes.length) {
+      message.warning('Add some nodes to the canvas before exporting.')
+      return
+    }
+    const PADDING = 60
+    const MAX_W = 2400
+    const bounds = getNodesBounds(userNodes)
+    const paddedBounds = {
+      x: bounds.x - PADDING,
+      y: bounds.y - PADDING,
+      width: bounds.width + PADDING * 2,
+      height: bounds.height + PADDING * 2,
+    }
+    const imgW = Math.min(Math.round(paddedBounds.width), MAX_W)
+    const imgH = Math.round(paddedBounds.height * (imgW / paddedBounds.width))
+    const { x, y, zoom } = getViewportForBounds(paddedBounds, imgW, imgH, 0.1, 4, 0)
+    const viewportEl = document.querySelector('.react-flow__viewport') as HTMLElement | null
+    if (!viewportEl) return
+    setExportingPng(true)
+    try {
+      const dataUrl = await toPng(viewportEl, {
+        backgroundColor: '#ffffff',
+        width: imgW,
+        height: imgH,
+        pixelRatio: 2,
+        style: {
+          width: `${imgW}px`,
+          height: `${imgH}px`,
+          transform: `translate(${x}px, ${y}px) scale(${zoom})`,
+          transformOrigin: '0 0',
+        },
+      })
+      const a = document.createElement('a')
+      a.download = `${archName || 'architecture'}.png`
+      a.href = dataUrl
+      a.click()
+    } catch {
+      message.error('Export failed. Please try again.')
+    } finally {
+      setExportingPng(false)
+    }
+  }
+
   const onConnect: OnConnect = useCallback((connection) => {
     setPendingConnection(connection)
     setEdgeModalOpen(true)
   }, [])
+
+  const onReconnectStart = useCallback(() => {
+    edgeReconnectSuccessful.current = false
+  }, [])
+
+  const onReconnect = useCallback((oldEdge: Edge, newConnection: Connection) => {
+    edgeReconnectSuccessful.current = true
+    isDirty.current = true
+    setSaveStatus('dirty')
+    setEdges((els) => reconnectEdge(oldEdge, newConnection, els))
+  }, [setEdges])
+
+  const onReconnectEnd = useCallback((_: MouseEvent | TouchEvent, edge: Edge) => {
+    if (!edgeReconnectSuccessful.current) {
+      isDirty.current = true
+      setSaveStatus('dirty')
+      setEdges((eds) => eds.filter((e) => e.id !== edge.id))
+    }
+    edgeReconnectSuccessful.current = true
+  }, [setEdges])
 
   function handleEdgeConfirm() {
     edgeForm.validateFields().then((values) => {
@@ -604,6 +862,10 @@ function ArchEditorInner() {
 
   const onNodeDragStop = useCallback(
     (_event: MouseEvent | TouchEvent, draggedNode: Node) => {
+      // Group nodes are top-level containers — never reparent them into other groups.
+      // Their children move with them automatically via ReactFlow's parentId system.
+      if (draggedNode.type === 'groupNode') return
+
       const getAbsolutePosition = (node: Node): { x: number; y: number } => {
         let x = node.position.x
         let y = node.position.y
@@ -694,6 +956,17 @@ function ArchEditorInner() {
   }, [setNodes, setEdges])
 
   useEffect(() => {
+    function handleEdgeDelete(e: Event) {
+      const { id: edgeId } = (e as CustomEvent).detail
+      isDirty.current = true
+      setSaveStatus('dirty')
+      setEdges((eds) => eds.filter((ed) => ed.id !== edgeId))
+    }
+    window.addEventListener('arch-edge-delete', handleEdgeDelete)
+    return () => window.removeEventListener('arch-edge-delete', handleEdgeDelete)
+  }, [setEdges])
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, chatOpen])
 
@@ -748,75 +1021,17 @@ function ArchEditorInner() {
       .finally(() => setLoading(false))
   }
 
-  function handleAddNode(backendNode: BackendNode) {
-    const viewport = reactFlowInstance.getViewport()
-    const position = {
-      x: (window.innerWidth / 2 - viewport.x) / viewport.zoom + (Math.random() - 0.5) * 80,
-      y: (window.innerHeight / 2 - viewport.y) / viewport.zoom + (Math.random() - 0.5) * 80,
-    }
-    addNodeToCanvas(backendNode, position)
-  }
-
-  function handleToolbarDragStart(e: React.DragEvent, backendNode: BackendNode) {
-    e.dataTransfer.setData('application/arch-node', JSON.stringify(backendNode))
-    e.dataTransfer.effectAllowed = 'copy'
-  }
-
-  const onDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault()
-      const raw = e.dataTransfer.getData('application/arch-node')
-      if (!raw) return
-      const backendNode: BackendNode = JSON.parse(raw)
-      const position = reactFlowInstance.screenToFlowPosition({ x: e.clientX, y: e.clientY })
-      addNodeToCanvas(backendNode, position)
-    },
-    [reactFlowInstance],
-  )
-
-  const onDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'copy'
-  }, [])
-
-  function addNodeToCanvas(backendNode: BackendNode, position: { x: number; y: number }) {
-    isDirty.current = true
-    setSaveStatus('dirty')
-    const id = `node-${Date.now()}`
-    const isGroup = backendNode.node_type === 'group'
-    setNodes((nds) => [
-      ...nds,
-      {
-        id,
-        type: isGroup ? 'groupNode' : 'archNode',
-        position,
-        ...(isGroup ? { style: { width: 400, height: 250 } } : {}),
-        data: {
-          label: backendNode.label,
-          icon: backendNode.icon,
-          description: backendNode.description,
-          provider: backendNode.provider,
-          configs: backendNode.configs,
-        },
-      },
-    ])
-  }
-
-  const filteredToolbarNodes = availableNodes.filter((n) =>
-    n.label.toLowerCase().includes(toolbarSearch.toLowerCase()) ||
-    n.provider.toLowerCase().includes(toolbarSearch.toLowerCase())
-  )
-
   return (
-    <div className="relative h-screen overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden">
       {mode === 'simulate' && (
         <style>{`@keyframes trafficFlow { to { stroke-dashoffset: -22; } }`}</style>
       )}
-      <div className="h-full flex flex-col">
-        {/* Top bar */}
-        <div ref={headerRef} className="flex items-center gap-2 px-4 py-2 bg-white border-b border-slate-200 shrink-0">
-          <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/archs')} size="small" />
 
+      {/* Top bar */}
+      <div className="flex items-center px-4 py-2 bg-white border-b border-slate-200 shrink-0 relative">
+        {/* Left: back, name, save status */}
+        <div className="flex items-center gap-2 flex-1">
+          <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/archs')} size="small" />
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-slate-700">{archName}</span>
             <span
@@ -831,142 +1046,88 @@ function ArchEditorInner() {
               <span className="text-xs text-slate-400">Auto-saved</span>
             )}
           </div>
+        </div>
 
-          <div className="ml-auto flex items-center gap-2">
-            {/* Mode toggle */}
-            <div className="flex items-center rounded-lg border border-slate-200 p-0.5 bg-slate-50">
-              <button
-                onClick={() => { setMode('design'); setSimOpen(false) }}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${mode === 'design' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                Design
-              </button>
-              <button
-                onClick={() => { setMode('simulate'); setSimOpen(true); setChatOpen(false) }}
-                className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${mode === 'simulate' ? 'bg-white shadow-sm text-violet-700' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                <ThunderboltOutlined className="text-[10px]" />
-                Simulate
-              </button>
-            </div>
-
-            <Button
-              icon={<DownloadOutlined />}
-              size="small"
-              onClick={() => {
-                const reactFlowEl = document.querySelector('.react-flow') as HTMLElement
-                if (!reactFlowEl) return
-                const nodesBounds = getNodesBounds(nodes)
-                const padding = 80
-                const imageWidth = nodesBounds.width + padding * 2
-                const imageHeight = nodesBounds.height + padding * 2
-                const transform = getViewportForBounds(nodesBounds, imageWidth, imageHeight, 0.5, 2, padding)
-                toPng(reactFlowEl, {
-                  backgroundColor: '#ffffff',
-                  width: imageWidth * 3,
-                  height: imageHeight * 3,
-                  pixelRatio: 3,
-                  style: {
-                    width: `${imageWidth}px`,
-                    height: `${imageHeight}px`,
-                    transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.zoom})`,
-                  },
-                  filter: (node) => {
-                    if (node?.classList?.contains('react-flow__minimap')) return false
-                    if (node?.classList?.contains('react-flow__controls')) return false
-                    if (node?.classList?.contains('react-flow__panel')) return false
-                    return true
-                  },
-                })
-                  .then((dataUrl) => {
-                    const a = document.createElement('a')
-                    a.setAttribute('download', `${archName || 'architecture'}.png`)
-                    a.setAttribute('href', dataUrl)
-                    a.click()
-                  })
-                  .catch(() => message.error('Failed to export image'))
-              }}
+        {/* Center: Design / Simulate toggle */}
+        <div className="absolute left-1/2 -translate-x-1/2">
+          <div className="flex items-center rounded-lg border border-slate-200 p-0.5 bg-slate-50">
+            <button
+              onClick={() => { setMode('design'); setSimOpen(false) }}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${mode === 'design' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
             >
-              Export PNG
-            </Button>
-            <Button type="primary" icon={<SaveOutlined />} size="small" onClick={() => handleSave()} loading={saving}>
-              Save
-            </Button>
+              Design
+            </button>
+            <button
+              onClick={() => { setMode('simulate'); setSimOpen(true) }}
+              className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${mode === 'simulate' ? 'bg-white shadow-sm text-violet-700' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <ThunderboltOutlined className="text-[10px]" />
+              Simulate
+            </button>
           </div>
         </div>
 
+        {/* Right: Export, Add Node, Save */}
+        <div className="flex items-center gap-2 flex-1 justify-end">
+          <Button icon={<DownloadOutlined />} size="small" onClick={handleExportPng} loading={exportingPng}>
+            Export PNG
+          </Button>
+          <Button icon={<PlusOutlined />} size="small" onClick={openNodePicker}>
+            Add Node
+          </Button>
+          <Button type="primary" icon={<SaveOutlined />} size="small" onClick={() => handleSave()} loading={saving}>
+            Save
+          </Button>
+        </div>
+      </div>
+
+      {/* Main area: canvas + side panels in a flex row */}
+      <div className="flex-1 flex overflow-hidden relative">
+
         {/* Canvas */}
-        <div className="flex-1 relative">
+        <div className="flex-1 relative overflow-hidden" style={{ background: '#f0f0f0' }}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onReconnect={onReconnect}
+            onReconnectStart={onReconnectStart}
+            onReconnectEnd={onReconnectEnd}
             onNodeDragStop={onNodeDragStop}
-            onDrop={onDrop}
-            onDragOver={onDragOver}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             deleteKeyCode={['Backspace', 'Delete']}
-            defaultEdgeOptions={{ selectable: true, zIndex: 1 }}
+            defaultEdgeOptions={{ type: 'deletableEdge', selectable: true, zIndex: 1, style: { stroke: '#000', strokeWidth: 1.5 } }}
+            connectionLineType={ConnectionLineType.SmoothStep}
+            connectionLineStyle={{ stroke: '#000', strokeWidth: 1.5 }}
             fitView
             fitViewOptions={{ maxZoom: 0.75 }}
           >
-            <Background />
-            <MiniMap pannable zoomable position="bottom-left" />
+            <Background color="#d1d1d1" gap={24} size={1.2} />
           </ReactFlow>
 
-          {/* Node toolbar — bottom-center */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
-            <div className="pointer-events-auto flex items-center gap-2 bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-slate-200 px-2.5 py-1.5">
-              <div className="flex items-center gap-1.5 border-r border-slate-200 pr-3 mr-1">
-                <SearchOutlined className="text-slate-400 text-xs" />
-                <input
-                  type="text"
-                  value={toolbarSearch}
-                  onChange={(e) => setToolbarSearch(e.target.value)}
-                  placeholder="Search…"
-                  className="w-20 text-xs text-slate-700 bg-transparent outline-none placeholder:text-slate-400"
-                />
-              </div>
+          {/* Floating AI Agent toggle — design mode only */}
+          {!chatOpen && mode === 'design' && (
+            <button
+              onClick={() => setChatOpen(true)}
+              className="absolute bottom-6 right-6 w-12 h-12 rounded-full bg-linear-to-br from-indigo-600 to-indigo-500 flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer z-5"
+            >
+              <RobotOutlined style={{ color: 'white' }} className="text-white text-lg" />
+            </button>
+          )}
 
-              {nodesLoading ? (
-                <div className="flex items-center justify-center px-3 py-0.5">
-                  <Spin size="small" />
-                </div>
-              ) : filteredToolbarNodes.length === 0 ? (
-                <span className="text-xs text-slate-400 px-2">No nodes</span>
-              ) : (
-                <div className="flex items-center gap-0.5 max-w-150 overflow-x-auto scrollbar-hide">
-                  {filteredToolbarNodes.map((node) => (
-                    <div
-                      key={node.id}
-                      draggable
-                      onDragStart={(e) => handleToolbarDragStart(e, node)}
-                      onClick={() => handleAddNode(node)}
-                      title={`${node.label}${node.provider ? ` · ${node.provider}` : ''}\nClick to add · Drag to place`}
-                      className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg hover:bg-indigo-50 cursor-grab active:cursor-grabbing transition-colors select-none shrink-0 w-14"
-                    >
-                      {node.icon && (
-                        <img
-                          src={node.icon}
-                          alt={node.label}
-                          className="w-5 h-5 object-contain"
-                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
-                        />
-                      )}
-                      <span className="text-[10px] text-slate-600 text-center leading-tight w-full truncate">
-                        {node.label}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          {/* Floating Simulate toggle — simulate mode only */}
+          {!simOpen && mode === 'simulate' && (
+            <button
+              onClick={() => setSimOpen(true)}
+              className="absolute bottom-6 right-6 w-12 h-12 rounded-full bg-linear-to-br from-violet-600 to-violet-500 flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer z-5"
+            >
+              <ThunderboltOutlined style={{ color: 'white' }} className="text-white text-lg" />
+            </button>
+          )}
         </div>
-      </div>
 
       {/* Edge details modal */}
       <Modal
@@ -976,7 +1137,7 @@ function ArchEditorInner() {
         onCancel={handleEdgeCancel}
         okText="Add Edge"
         width={400}
-        destroyOnClose
+        destroyOnHidden
       >
         <p className="text-xs text-slate-500 mb-3">
           What does this connection represent? This helps the AI analyst understand your architecture better.
@@ -1135,31 +1296,11 @@ function ArchEditorInner() {
         </Form>
       </Modal>
 
-      {/* Floating AI Agent toggle — design mode only */}
-      {!chatOpen && mode === 'design' && (
-        <button
-          onClick={() => setChatOpen(true)}
-          className="absolute bottom-6 right-6 w-12 h-12 rounded-full bg-linear-to-br from-indigo-600 to-indigo-500 flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer z-5"
-        >
-          <RobotOutlined style={{ color: 'white' }} className="text-white text-lg" />
-        </button>
-      )}
-
-      {/* Floating Simulate toggle — simulate mode only */}
-      {!simOpen && mode === 'simulate' && (
-        <button
-          onClick={() => setSimOpen(true)}
-          className="absolute bottom-6 right-6 w-12 h-12 rounded-full bg-linear-to-br from-violet-600 to-violet-500 flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer z-5"
-        >
-          <ThunderboltOutlined style={{ color: 'white' }} className="text-white text-lg" />
-        </button>
-      )}
-
-      {/* ═══════════════ Simulate Panel ═══════════════ */}
-      {simOpen && mode === 'simulate' && (
+        {/* ═══════════════ Simulate Panel ═══════════════ */}
+        {simOpen && mode === 'simulate' && (
         <div
-          className="absolute right-0 bottom-0 bg-white border-l border-slate-200 shadow-xl flex flex-col z-40"
-          style={{ top: headerHeight, width: SIM_PANEL_WIDTH }}
+          className="shrink-0 bg-white border-l border-slate-200 shadow-xl flex flex-col z-40 overflow-hidden"
+          style={{ width: SIM_PANEL_WIDTH }}
         >
           {/* ── LIST VIEW ── */}
           {activeScenarioId === null && (
@@ -1518,11 +1659,11 @@ function ArchEditorInner() {
             </>
           )}
         </div>
-      )}
+        )}
 
-      {/* Resizable Chat Panel */}
-      {chatOpen && (
-        <div className="absolute right-0 bottom-0 flex z-40" style={{ top: headerHeight, width: chatWidth }}>
+        {/* Resizable Chat Panel */}
+        {chatOpen && (
+        <div className="flex shrink-0 z-40" style={{ width: chatWidth }}>
           <div
             onMouseDown={handleMouseDown}
             className="w-1.5 h-full cursor-col-resize bg-slate-200 hover:bg-indigo-400 transition-colors shrink-0"
@@ -1543,45 +1684,37 @@ function ArchEditorInner() {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 bg-slate-50">
-              {messages.map((msg) => (
-                <div key={msg.id} className={`flex gap-2 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                  {msg.role === 'assistant' ? (
-                    <div className="w-5 h-5 rounded-md bg-linear-to-br from-indigo-600 to-indigo-500 flex items-center justify-center shrink-0 mt-0.5">
-                      <RobotOutlined style={{ color: 'white' }} className="text-white text-[9px]" />
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5 bg-white">
+              {messages.map((msg) =>
+                msg.role === 'user' ? (
+                  /* User: compact right-aligned bubble */
+                  <div key={msg.id} className="flex justify-end">
+                    <div className="max-w-[80%] bg-indigo-600 text-white px-3 py-2 rounded-2xl rounded-tr-sm text-xs leading-relaxed">
+                      {msg.content}
                     </div>
-                  ) : (
-                    <Avatar size={20} icon={<UserOutlined />} className="bg-slate-700 shrink-0 mt-0.5" />
-                  )}
-                  <div
-                    className={`max-w-[82%] text-xs leading-relaxed overflow-hidden ${
-                      msg.role === 'user'
-                        ? 'bg-indigo-600 text-white px-2.5 py-1.5 rounded-xl rounded-tr-sm'
-                        : 'bg-white text-slate-700 px-2.5 py-1.5 rounded-xl rounded-tl-sm shadow-sm border border-slate-100'
-                    }`}
-                  >
-                    {msg.role === 'assistant' ? (
-                      <div className="prose prose-xs prose-slate max-w-none overflow-x-auto prose-headings:mt-1.5 prose-headings:mb-1 prose-headings:text-xs prose-p:my-0.5 prose-p:text-xs prose-ul:my-0.5 prose-ul:text-xs prose-li:my-0 prose-strong:text-slate-800 prose-code:text-[10px] prose-code:break-all prose-pre:overflow-x-auto prose-pre:max-w-full prose-pre:text-[10px] prose-table:text-[10px]">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                      </div>
-                    ) : (
-                      msg.content
-                    )}
                   </div>
-                </div>
-              ))}
+                ) : (
+                  /* Assistant: full-width, left-aligned, no bubble */
+                  <div key={msg.id} className="w-full">
+                    <div className="prose prose-xs prose-slate max-w-none overflow-x-auto text-xs leading-relaxed prose-headings:mt-2 prose-headings:mb-1 prose-headings:text-xs prose-p:my-1 prose-p:text-xs prose-ul:my-1 prose-ul:text-xs prose-li:my-0 prose-strong:text-slate-800 prose-code:text-[10px] prose-code:break-all prose-pre:overflow-x-auto prose-pre:max-w-full prose-pre:text-[10px] prose-table:text-[10px]">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                    </div>
+                  </div>
+                )
+              )}
 
               {loading && (
-                <div className="flex gap-2">
-                  <div className="w-5 h-5 rounded-md bg-linear-to-br from-indigo-600 to-indigo-500 flex items-center justify-center shrink-0 mt-0.5">
-                    <RobotOutlined style={{ color: 'white' }} className="text-white text-[9px]" />
-                  </div>
-                  <div className="bg-white px-3 py-2 rounded-xl rounded-tl-sm shadow-sm border border-slate-100">
-                    <div className="flex gap-1">
-                      <span className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-bounce [animation-delay:0ms]" />
-                      <span className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-bounce [animation-delay:150ms]" />
-                      <span className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-bounce [animation-delay:300ms]" />
+                <div className="w-full">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <div className="w-4 h-4 rounded bg-linear-to-br from-indigo-600 to-indigo-500 flex items-center justify-center shrink-0">
+                      <RobotOutlined style={{ color: 'white', fontSize: 8 }} />
                     </div>
+                    <span className="text-[10px] font-semibold text-slate-500 tracking-wide uppercase">Arch Analyst</span>
+                  </div>
+                  <div className="flex gap-1 items-center py-1">
+                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce [animation-delay:0ms]" />
+                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce [animation-delay:150ms]" />
+                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce [animation-delay:300ms]" />
                   </div>
                 </div>
               )}
@@ -1613,7 +1746,134 @@ function ArchEditorInner() {
             </div>
           </div>
         </div>
+        )}
+
+      </div>{/* end main flex row */}
+
+      {/* Node picker dropdown (anchored to Add Node button) */}
+      {pickerOpen && pickerAnchor && (
+        <div
+          ref={contextMenuRef}
+          style={{
+            position: 'fixed',
+            left: Math.min(pickerAnchor.x, window.innerWidth - 244),
+            top: Math.min(pickerAnchor.y, window.innerHeight - 340),
+            zIndex: 9999,
+          }}
+          className="bg-white rounded-xl shadow-2xl border border-slate-200 w-56 overflow-hidden"
+        >
+          <div className="px-2.5 pt-2.5 pb-1.5 border-b border-slate-100">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">Add Node</p>
+            <button
+              onClick={() => { setPickerOpen(false); setCreateNodeOpen(true); createNodeForm.resetFields(); setCreateNodeIconUrl('') }}
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 mb-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium transition-colors cursor-pointer"
+            >
+              <PlusOutlined className="text-[10px]" />
+              Create New Node
+            </button>
+            <input
+              ref={ctxSearchRef}
+              value={ctxSearch}
+              onChange={e => setCtxSearch(e.target.value)}
+              placeholder="Search existing nodes…"
+              className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-400 bg-slate-50 placeholder:text-slate-400"
+            />
+          </div>
+          <div className="overflow-y-auto" style={{ maxHeight: 240 }}>
+            {!ctxNodesLoaded ? (
+              <div className="flex items-center justify-center py-6">
+                <Spin size="small" />
+              </div>
+            ) : filteredCtxNodes.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-4">No nodes found</p>
+            ) : (
+              filteredCtxNodes.map(node => (
+                <button
+                  key={node.id}
+                  onClick={() => addNodeFromPicker(node)}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                >
+                  {node.icon ? (
+                    <img
+                      src={node.icon} alt={node.label}
+                      className="w-5 h-5 object-contain shrink-0"
+                      onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                    />
+                  ) : (
+                    <div className="w-5 h-5 rounded bg-slate-100 shrink-0 flex items-center justify-center">
+                      <span className="text-[9px] text-slate-500 font-medium">{node.label[0]}</span>
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-slate-700 truncate leading-tight">{node.label}</p>
+                    {node.provider && (
+                      <p className="text-[10px] text-slate-400 truncate leading-tight">{node.provider}</p>
+                    )}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
       )}
+
+      {/* Create New Node modal */}
+      <Modal
+        title="Create New Node"
+        open={createNodeOpen}
+        onCancel={() => { setCreateNodeOpen(false); createNodeForm.resetFields(); setCreateNodeIconUrl('') }}
+        onOk={handleCreateNodeSubmit}
+        okText="Create & Add to Canvas"
+        confirmLoading={createNodeUploading}
+        width={480}
+        destroyOnHidden
+      >
+        <Form form={createNodeForm} layout="vertical" className="mt-4">
+          <Form.Item label="Icon" extra="Optional — if not set, the node label will be shown instead">
+            <div className="flex items-center gap-4">
+              {createNodeIconUrl && (
+                <img
+                  src={createNodeIconUrl}
+                  alt="icon preview"
+                  className="w-12 h-12 rounded-lg object-contain border border-slate-200"
+                  onError={e => { (e.currentTarget as HTMLImageElement).src = 'https://placehold.co/48x48?text=N' }}
+                />
+              )}
+              <Upload
+                accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif"
+                showUploadList={false}
+                beforeUpload={file => { handleCreateNodeIconUpload(file); return false }}
+              >
+                <button
+                  type="button"
+                  className="w-12 h-12 border-2 border-dashed border-slate-300 rounded-lg flex items-center justify-center hover:border-indigo-400 transition-colors cursor-pointer"
+                >
+                  <PlusOutlined className="text-slate-400" />
+                </button>
+              </Upload>
+              <span className="text-xs text-slate-400">PNG, JPG, WebP, SVG, GIF (max 2MB)</span>
+            </div>
+          </Form.Item>
+          <Form.Item name="label" label="Label" rules={[{ required: true, message: 'Please enter a label' }]}>
+            <Input placeholder="e.g. PostgreSQL" />
+          </Form.Item>
+          <Form.Item name="description" label="Description" rules={[{ required: true, message: 'Please enter a description' }]}>
+            <Input.TextArea rows={3} placeholder="Brief description of the node" />
+          </Form.Item>
+          <Form.Item name="provider" label="Provider" rules={[{ required: true, message: 'Please enter a provider' }]}>
+            <Input placeholder="e.g. AWS, GCP, Self-hosted" />
+          </Form.Item>
+          <Form.Item name="node_type" label="Node Type" initialValue="standard" rules={[{ required: true, message: 'Please select a node type' }]}>
+            <Select
+              options={[
+                { value: 'standard', label: 'Standard' },
+                { value: 'group', label: 'Group (Container)' },
+              ]}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
     </div>
   )
 }
